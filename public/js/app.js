@@ -1633,6 +1633,7 @@ function setDoc(d, { keepView = false } = {}) {
   if (!d._wired) { d._wired = true; d.on((kind) => { if (d === doc) onDocChange(kind); }); }
   if (d.mode === "skin") skinDoc = d; else artDoc = d;
   document.body.dataset.mode = d.mode;
+  syncFocusBar();
   $$(".modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === d.mode));
   if (d.mode === "skin") {
     if (!preview) setupPreview();
@@ -1805,13 +1806,30 @@ async function exportDialog() {
       <p><b>Java:</b> minecraft.net → Profile → Skins → upload the PNG and pick <b>${arms}</b>. Or the launcher's Skins tab.</p>
       <p><b>Bedrock:</b> Dressing Room → Classic Skins → Owned → Import → Choose New Skin, then pick the <b>${arms.toLowerCase()}</b> arm shape. (Not every console allows imports.)</p>
       <div class="btns">
-        <button value="pic">Picture of the 3D model</button>
+        <button value="views3" title="Three pictures of the 3D model: front, three-quarter and back">3D model: 3 pictures</button>
+        <button value="sheet3" title="Front, three-quarter and back side by side in one picture">3D model: side by side</button>
+        <button value="pic" title="The 3D model exactly as it's turned right now">3D as shown</button>
         <button value="ase">Aseprite file</button>
         <button value="json">Project file</button>
         <button value="png" class="primary">Download skin PNG</button>
       </div>`);
     if (r === "png") store.download(store.pxToDataURL(doc.composite(), 64, 64), `${base}.png`);
     if (r === "pic" && preview) store.download(preview.snapshot(), `${base}-3d.png`);
+    if ((r === "views3" || r === "sheet3") && !preview) toast("The 3D model needs WebGL, which this browser has turned off.");
+    if ((r === "views3" || r === "sheet3") && preview) {
+      const names = ["front", "angle", "back"], labels = ["front", "three-quarter", "back"];
+      const shots = preview.renderViews(names);
+      if (r === "views3") shots.forEach((c, i) => store.download(c.toDataURL("image/png"), `${base}-3d-${labels[i]}.png`));
+      else {
+        const H = Math.max(...shots.map((c) => c.height)), gap = Math.round(H * 0.06);
+        const sheet = document.createElement("canvas");
+        sheet.width = shots.reduce((s, c) => s + c.width, 0) + gap * (shots.length + 1); sheet.height = H + gap * 2;
+        const g = sheet.getContext("2d");
+        let x = gap;
+        for (const c of shots) { g.drawImage(c, x, gap + (H - c.height)); x += c.width + gap; }
+        store.download(sheet.toDataURL("image/png"), `${base}-3d-turnaround.png`);
+      }
+    }
     if (r === "json") downloadProject();
     if (r === "ase") downloadAse();
     return;
@@ -3174,6 +3192,9 @@ function syncFocusBar() {
   $(".fFrames").style.display = n > 1 ? "" : "none";
   const t = $(`#toolList button[data-tool="${S.tool}"]`);
   $("#fTool").innerHTML = t ? t.innerHTML : "";
+  const skin = doc.mode === "skin";
+  $("#fMode").innerHTML = `${MODE_ICONS[skin ? "skin" : "art"]}<span class="fmLbl">${skin ? "Skin" : "Pixel art"}</span><span class="fmCaret">▾</span>`;
+  $("#fMode").title = skin ? "Minecraft skin editor. Tap to switch to pixel art." : "Pixel art editor. Tap to switch to the Minecraft skin editor.";
   const info = TOOLS.find((x) => x.id === S.tool);
   const sized = ["pencil", "eraser", "shade", "spray", "line", "rect", "ellipse", "contour"].includes(S.tool) && !S.brush;
   $("#fToolName").textContent = info ? info.label.split(" (")[0] + (S.brush && ["pencil", "eraser"].includes(S.tool) ? " · custom brush" : sized && S.size > 1 ? ` · ${S.size}px` : "") : "";
@@ -3190,6 +3211,14 @@ const FOCUS_ITEMS = {
     "-", ["Resize layer…", "#dResizeLayer"], ["Canvas size…", "#dResize"], ["Flip layer ↔", "#dFlipH"], ["Flip layer ↕", "#dFlipV"], ["Reference image…", "#dRef"]],
   view: [["Grid", "#optGrid"], ["Mirror ↔", "#optMirrorX"], ["Mirror ↕", "#optMirrorY"], ["Tile mode", "#optTile"], ["Onion skin", "#aOnion"], ["Part outlines", "#optGuides"], "-", ["Fit to screen", "#zFit"]],
 };
+FOCUS_ITEMS.mode = () => [
+  [(doc.mode !== "skin" ? "✓ " : "    ") + "Pixel art", () => $('.modes button[data-mode="art"]').click()],
+  [(doc.mode === "skin" ? "✓ " : "    ") + "Minecraft skin", () => $('.modes button[data-mode="skin"]').click()],
+];
+const MODE_ICONS = {
+  art: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/></svg>',
+  skin: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="14" rx="1.5"/><path d="M8 9h2.5v2H8zM13.5 9H16v2h-2.5zM10.5 13h3v3h-3z" fill="currentColor"/><path d="M8 18v2.5M16 18v2.5"/></svg>',
+};
 const FOCUS_PANELS = { tools: ["#toolList", ".toolOpts"], layers: ["#layersCard"], colour: ["#colourCard"], anim: ["#animCard"], skin: ["#skinCard"] };
 function visibleSrc(sel) { const el = $(sel); return el && getComputedStyle(el).display !== "none" ? el : el && el.closest(".art-only, .skin-only") ? null : el; }
 function closeFocusMenu() {
@@ -3201,7 +3230,8 @@ function closeFocusMenu() {
 function renderFocusMenu(name) {
   const pop = $("#fpop"); pop.innerHTML = "";
   const art = doc.mode !== "skin";
-  for (const it of FOCUS_ITEMS[name]) {
+  const items = typeof FOCUS_ITEMS[name] === "function" ? FOCUS_ITEMS[name]() : FOCUS_ITEMS[name];
+  for (const it of items) {
     if (it === "-") { pop.appendChild(document.createElement("hr")); continue; }
     const [label, act, enabled] = it;
     const src = typeof act === "string" && act.startsWith("#") ? $(act) : null;

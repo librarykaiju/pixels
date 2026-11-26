@@ -6,11 +6,11 @@ import { partsFor, faceRects } from "./skin.js";
 
 const VS = `
 attribute vec3 aPos; attribute vec2 aUV; attribute vec3 aNorm;
-uniform mat4 uProj, uView, uModel;
+uniform mat4 uProj, uView, uModel; uniform vec3 uLight;
 varying vec2 vUV; varying float vLight;
 void main() {
   vec3 n = normalize(mat3(uModel) * aNorm);
-  vec3 L = normalize(vec3(0.35, 0.8, 0.6));
+  vec3 L = normalize(uLight);
   vLight = 0.58 + 0.42 * max(dot(n, L), 0.0);
   vUV = aUV;
   gl_Position = uProj * uView * uModel * vec4(aPos, 1.0);
@@ -105,6 +105,22 @@ function boxData(x0, y0, z0, x1, y1, z1, u, v, w, h, d) {
   return { pos, uv, nrm, idx };
 }
 
+// Copy a canvas, trimmed to what's drawn plus a small margin.
+function cropToContent(src) {
+  const w = src.width, h = src.height;
+  const tmp = document.createElement("canvas"); tmp.width = w; tmp.height = h;
+  const t = tmp.getContext("2d"); t.drawImage(src, 0, 0);
+  const a = t.getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (a[(y * w + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return tmp;
+  const pad = Math.round(Math.max(x1 - x0, y1 - y0) * 0.05);
+  x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(w - 1, x1 + pad); y1 = Math.min(h - 1, y1 + pad);
+  const out = document.createElement("canvas"); out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
+  out.getContext("2d").drawImage(tmp, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
+}
+
 export class SkinPreview {
   constructor(canvas) {
     this.canvas = canvas;
@@ -143,7 +159,7 @@ export class SkinPreview {
     this.prog = p;
     this.loc = {};
     for (const n of ["aPos", "aUV", "aNorm"]) this.loc[n] = gl.getAttribLocation(p, n);
-    for (const n of ["uProj", "uView", "uModel", "uTex", "uOverlay", "uPick", "uGrid", "uHover"]) this.loc[n] = gl.getUniformLocation(p, n);
+    for (const n of ["uProj", "uView", "uModel", "uTex", "uOverlay", "uPick", "uGrid", "uHover", "uLight"]) this.loc[n] = gl.getUniformLocation(p, n);
 
     this.tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -283,6 +299,7 @@ export class SkinPreview {
     gl.uniformMatrix4fv(L.uProj, false, proj);
     gl.uniformMatrix4fv(L.uView, false, view);
     gl.uniform1f(L.uPick, pick ? 1 : 0);
+    gl.uniform3fv(L.uLight, this.light || [0.35, 0.8, 0.6]);
     gl.uniform1f(L.uGrid, this.grid && !pick ? 1 : 0);
     gl.uniform4fv(L.uHover, pick ? [-1, -1, -1, -1] : this.hover);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tex); gl.uniform1i(L.uTex, 0);
@@ -337,6 +354,31 @@ export class SkinPreview {
     const views = { front: [0, 0.1], back: [Math.PI, 0.1], left: [-Math.PI / 2, 0.1], right: [Math.PI / 2, 0.1], top: [0, 1.35], angle: [-0.55, 0.18] };
     [this.yaw, this.pitch] = views[name] || views.angle;
     this.requestDraw();
+  }
+
+  // Clean renders of the whole model from fixed angles, for download: returns one cropped canvas per view.
+  // No walk pose, grid, hover or part isolation; the outer layer follows the "Outer layer" switch.
+  renderViews(names, w = 900, h = 1200) {
+    const c = this.canvas;
+    const save = { yaw: this.yaw, pitch: this.pitch, dist: this.dist, target: this.target, walk: this.walk, hover: this.hover, grid: this.grid, hidden: this.hidden, cw: c.width, ch: c.height };
+    const angles = { front: [0, 0.12], angle: [-0.62, 0.14], back: [Math.PI, 0.12], left: [-Math.PI / 2, 0.12], right: [Math.PI / 2, 0.12] };
+    this.walk = false; this.t = 0; this.hover = [-1, -1, -1, -1]; this.grid = false; this.hidden = new Set(); this.target = [0, 16, 0]; this.dist = 70;
+    c.width = w; c.height = h;
+    const out = [];
+    for (const n of names) {
+      [this.yaw, this.pitch] = angles[n] || angles.angle;
+      const a = -this.yaw, c0 = Math.cos(a), s0 = Math.sin(a); // light each view from the camera side, so the back isn't in shadow
+      this.light = [0.35 * c0 - 0.6 * s0, 0.8, 0.35 * s0 + 0.6 * c0];
+      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+      this._setup(w, h, false);
+      this._drawMeshes(false);
+      out.push(cropToContent(c));
+    }
+    this.light = null;
+    Object.assign(this, { yaw: save.yaw, pitch: save.pitch, dist: save.dist, target: save.target, walk: save.walk, hover: save.hover, grid: save.grid, hidden: save.hidden });
+    c.width = save.cw; c.height = save.ch;
+    this.requestDraw();
+    return out;
   }
 
   // PNG of the current view (for a share thumbnail / "save picture of the model")

@@ -355,3 +355,9 @@ body.touch .floatbar button { min-height: 38px; }
 
 .tfHint { position: fixed; left: 50%; top: calc(70px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 30; pointer-events: none;
   background: #000c; color: #fff; padding: 4px 10px; border-radius: 8px; font: 600 13px/1.4 ui-monospace, monospace; }
+
+/* focus bar: editor switch (pixel art / Minecraft skin) */
+.fb.fmode { width: auto; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px 0 8px; background: #ffffff10; font-size: 14px; font-weight: 600; }
+.fb.fmode .fmCaret { font-size: 10px; color: var(--dim); }
+.fpop.fp-mode { width: 220px; gap: 2px; padding: 6px; }
+@media (max-width: 700px) { .fb.fmode .fmLbl { display: none; } .fb.fmode { padding: 0 6px; gap: 2px; } }
