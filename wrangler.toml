@@ -1,0 +1,15 @@
+name = "pixels"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+# Public site on its own hostname. No *.workers.dev or preview addresses.
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "pixels.brandonj.ink", custom_domain = true }]
+
+# The editor is static files in ./public. The Worker only runs first for /api/*.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]

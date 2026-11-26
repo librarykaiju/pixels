@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pixels · pixel art and Minecraft skins</title>
+<meta name="description" content="Draw pixel art and make Minecraft skins in your browser, with a live 3D preview. Works for Java and Bedrock.">
+<meta name="theme-color" content="#16141c">
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pixels">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body data-mode="art">
+<header class="top">
+  <div class="brand"><img src="/favicon-32.png" alt="" width="32" height="32" style="image-rendering:pixelated"><span>Pixels</span></div>
+  <nav class="modes" aria-label="Mode">
+    <button data-mode="art" class="on">Pixel art</button>
+    <button data-mode="skin">Minecraft skin</button>
+  </nav>
+  <div class="actions">
+    <button id="bNew" title="New (N)">New</button>
+    <button id="bOpen" title="My drawings (Ctrl+O)">My drawings</button>
+    <button id="bSave" title="Save (Ctrl+S)">Save</button>
+    <button id="bImport" title="Import a PNG">Import</button>
+    <button id="bChar2" class="skin-only" title="Pick skin tone, eyes, hair and clothes to start from">Character starter</button>
+    <button id="bAssets" class="art-only" title="Free RPG tiles, items, characters and maps">Assets</button>
+    <button id="bExport" class="primary" title="Download PNG">Export</button>
+  </div>
+  <div class="hist">
+    <button id="bFocus" title="Focus mode: full-screen canvas with a floating tool dock (Tab)">⛶ Focus</button>
+    <button id="bHelp" title="Shortcuts (?)" aria-label="Help">?</button>
+  </div>
+</header>
+
+<main>
+  <aside class="tools" aria-label="Tools">
+    <div class="histTools">
+      <button id="bUndo" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="hico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h14v11"/></svg></button>
+      <button id="bRedo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="hico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H6v11"/></svg></button>
+    </div>
+    <div id="toolList" class="toolList"></div>
+    <div class="toolOpts">
+      <label class="opt" title="Brush size ([ and ])">Size
+        <select id="optSize"><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select>
+      </label>
+      <label class="opt" title="Dither: the brush, shapes and fill paint only part of a pattern (T cycles)">Dither
+        <select id="optDither"><option value="off">Off</option><option value="d50">50% checker</option><option value="d25">25%</option><option value="d75">75%</option><option value="d12">12%</option><option value="lines">Lines</option></select>
+      </label>
+      <label class="opt" title="Ink: how the brush puts colour down">Ink
+        <select id="optInk"><option value="simple">Simple</option><option value="blend">Blend (see-through colours mix)</option><option value="behind">Behind (only empty pixels)</option><option value="shading">Shading (step along the palette)</option></select>
+      </label>
+      <button id="brushChip" class="tog on" hidden title="Click to go back to the round brush">Brush</button>
+      <button id="optPressure" class="tog" title="Pen pressure changes the brush size (Apple Pencil, drawing tablets)">Pressure</button>
+      <button id="optPerfect" class="tog" title="Pixel perfect: tidies the corner pixels freehand lines leave (size 1 pencil and eraser)">Pixel perfect</button>
+      <button id="optTile" class="tog art-only" title="Tile mode: shows the drawing repeated and wraps strokes across the edges, for seamless tiles (W)">Tile mode</button>
+      <button id="optMirrorX" class="tog" title="Mirror left/right (M)">Mirror ↔</button>
+      <button id="optMirrorY" class="tog art-only" title="Mirror up/down">Mirror ↕</button>
+      <button id="optLock" class="tog" title="Line lock: a drag paints only straight across or straight down (K, or hold Shift)">Line lock</button>
+      <button id="optFilled" class="tog" title="Filled shapes">Filled</button>
+      <button id="optGrid" class="tog on" title="Grid (G)">Grid</button>
+      <button id="optGuides" class="tog on skin-only" title="Show part outlines">Outlines</button>
+    </div>
+  </aside>
+
+  <section class="stage" id="stage">
+    <canvas id="view" tabindex="0" aria-label="Drawing canvas"></canvas>
+    <div class="seg viewSeg skin-only" id="viewSeg" role="group" aria-label="Skin view">
+      <button data-sv="2d" class="on" title="Paint the flat skin texture">Flat</button>
+      <button data-sv="3d" title="Paint on the 3D model, with the pixel grid on it">3D</button>
+    </div>
+    <div class="floatbar" id="selBar" hidden>
+      <button data-sel="flipH" title="Flip selection left/right">Flip ↔</button>
+      <button data-sel="flipV" title="Flip selection up/down">Flip ↕</button>
+      <button data-sel="rotL" title="Rotate 90° left">⟲ 90°</button>
+      <button data-sel="rotR" title="Rotate 90° right">⟳ 90°</button>
+      <button data-sel="transform" title="Scale or rotate by any amount">Scale / rotate…</button>
+      <button data-sel="invert" title="Select everything that isn't selected">Invert</button>
+      <button data-sel="brush" title="Turn the selection into a custom brush">Use as brush</button>
+      <button data-sel="copy" title="Copy (Ctrl+C)">Copy</button>
+      <button data-sel="delete" title="Delete (Del)">Delete</button>
+      <button data-sel="done" title="Done (Enter)">Done</button>
+    </div>
+    <div class="fbar" id="fbar">
+      <div class="fgrp">
+        <button id="fExit" class="fb" title="Show all the menus and panels (Tab)" aria-label="Show all menus"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg></button>
+        <button class="fb" data-fmenu="file" title="File: new, open, save, import, export" aria-label="File"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg></button>
+        <button class="fb" data-fmenu="edit" title="Edit: copy, paste, adjust, recolour, canvas size" aria-label="Edit"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
+        <button class="fb" data-fmenu="view" title="View: grid, mirrors, tile mode, onion skin" aria-label="View"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg></button>
+        <button class="fb art-only" data-fmenu="anim" title="Animation: frames, tags, timing" aria-label="Animation"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7.5 5v14M16.5 5v14M3.5 9.5h4M3.5 14.5h4M16.5 9.5h4M16.5 14.5h4"/></svg></button>
+        <button class="fb skin-only" data-fmenu="skin" title="3D preview and skin options" aria-label="Skin preview"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="7" rx="1"/><path d="M7 11h10v6H7zM8 17v4M16 17v4M4.5 11.5v5M19.5 11.5v5"/></svg></button>
+        <span class="fFrames art-only"><button id="fPrev" class="fb sm" title="Previous frame" aria-label="Previous frame">‹</button><span id="fFrameNo"></span><button id="fNext" class="fb sm" title="Next frame" aria-label="Next frame">›</button></span>
+      </div>
+      <button id="fToolName" class="fToolName" data-fmenu="tools" title="Tools and brush options"></button>
+      <div class="fgrp">
+        <button id="fUndo" class="fb" title="Undo (two-finger tap)" aria-label="Undo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h14v11"/></svg></button>
+        <button id="fRedo" class="fb" title="Redo (three-finger tap)" aria-label="Redo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H6v11"/></svg></button>
+        <span class="fsep"></span>
+        <button id="fTool" class="fb" data-fmenu="tools" title="Tools and brush options" aria-label="Tools"></button>
+        <button class="fb" data-fmenu="layers" title="Layers" aria-label="Layers"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 21 8.5l-9 5-9-5z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 16.5 9 5 9-5"/></svg></button>
+        <button id="fColor" class="fb fcol" data-fmenu="colour" title="Colour" aria-label="Colour"><span class="sw"></span></button>
+      </div>
+    </div>
+    <div class="fpop" id="fpop" hidden></div>
+    <div class="zoombar">
+      <button id="zOut" aria-label="Zoom out">−</button>
+      <button id="zFit" title="Fit (0)">Fit</button>
+      <button id="zIn" aria-label="Zoom in">+</button>
+    </div>
+    <div class="status" id="status"></div>
+  </section>
+
+  <aside class="panel">
+    <section class="card skin-only" id="skinCard">
+      <div class="preview3d">
+        <canvas id="preview" aria-label="3D skin preview"></canvas>
+        <div class="pv-views">
+          <button data-view="front">Front</button><button data-view="back">Back</button>
+          <button data-view="left">Side</button><button data-view="angle">¾</button>
+        </div>
+        <div class="pv-tools" id="pvTools">
+          <button data-pv="undo" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="hico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h14v11"/></svg></button>
+          <button data-pv="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="hico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H6v11"/></svg></button>
+          <button data-pv="outer" class="tog on" title="Show and paint the outer layer (hat, jacket, sleeves, pants)">Outer layer</button>
+          <span class="sep"></span>
+          <div class="isoChips" data-iso-group></div>
+        </div>
+        <div class="pv-hint" id="pvHint">Drag the background to turn. Draw on the model.</div>
+      </div>
+      <canvas id="flat" width="256" height="256" aria-label="Flat skin texture" hidden></canvas>
+      <button id="bChar" class="primary" title="Pick skin tone, eyes, hair and clothes to start from">Character starter…</button>
+      <div class="row">
+        <div class="seg" id="modelSeg" role="group" aria-label="Arm width">
+          <button data-model="classic" class="on" title="4-pixel arms">Classic arms</button>
+          <button data-model="slim" title="3-pixel arms">Slim arms</button>
+        </div>
+      </div>
+      <div class="row wrap">
+        <button id="pvOuter" class="tog on" title="Show the outer layer (hat, jacket, sleeves, pants)">Outer layer</button>
+        <button id="pvWalk" class="tog" title="Walk">Walk</button>
+        <label class="opt" title="Which layer drawing on the model paints">Draw on
+          <select id="pvTarget"><option value="base">Skin</option><option value="over">Outer layer</option></select>
+        </label>
+      </div>
+      <div class="opt">Paint one part only</div>
+      <div class="isoChips parts" data-iso-group title="Show and paint only this part. Everything else is locked."></div>
+      <div class="check" id="skinCheck"></div>
+    </section>
+
+    <section class="card art-only" id="animCard">
+      <div class="row"><h2>Animation</h2><span class="spacer"></span>
+        <span class="dim" id="aCount"></span>
+        <button id="aPlay" class="tog on mini" title="Play the preview">▶ Play</button></div>
+      <canvas id="animPreview" width="240" height="120" aria-label="Animation preview"></canvas>
+      <div class="row tagRow">
+        <select id="aTag" aria-label="Play which tag" title="Which part of the animation the preview plays"><option value="">All frames</option></select>
+        <button id="aTagAdd" class="mini" title="Name a range of frames (walk, idle…) with a loop direction">+ Tag</button>
+        <button id="aTagEdit" class="mini" title="Edit or delete this tag" disabled>Edit</button>
+      </div>
+      <div class="frames" id="frames"></div>
+      <div class="row wrap">
+        <button id="aAdd" title="New blank frame">+ Frame</button>
+        <button id="aDup" title="Copy this frame">Duplicate</button>
+        <button id="aLeft" title="Move frame earlier" aria-label="Move frame earlier">◀</button>
+        <button id="aRight" title="Move frame later" aria-label="Move frame later">▶</button>
+        <button id="aDel" title="Delete frame">Delete</button>
+      </div>
+      <div class="row wrap">
+        <label class="opt">Frame time <input type="number" id="aMs" min="20" max="10000" step="10" style="width:72px"> ms</label>
+        <button id="aAll" title="Use this time for every frame">All frames</button>
+        <button id="aOnion" class="tog" title="See the previous frame faintly under this one">Onion skin</button>
+        <button id="aLink" title="Link this layer's cel to the previous frame: both frames share one image, so editing one edits both">Link cel ←</button>
+        <button id="aUnlink" title="Give this frame its own copy of the image again" disabled>Unlink</button>
+      </div>
+    </section>
+
+    <section class="card" id="colourCard">
+      <div class="row colourHead"><h2>Colour</h2><span class="spacer"></span>
+        <div class="swatches2">
+          <button id="cPrimary" class="sw big" title="Left click colour"></button>
+          <button id="cSecondary" class="sw big sec" title="Right click colour (tap to swap)"></button>
+          <button id="cSwap" class="mini" title="Swap (X)">⇄</button>
+        </div>
+      </div>
+      <div class="wheelBox" id="cWheel"></div>
+      <div class="row colourVals">
+        <input type="text" id="cHex" maxlength="9" spellcheck="false" aria-label="Hex colour">
+        <label class="alpha">Opacity <input type="range" id="cAlpha" min="0" max="255" value="255"></label>
+        <input type="color" id="cInput" aria-label="System colour picker" title="System colour picker">
+      </div>
+      <h3>Recent</h3>
+      <div class="palette small" id="recentColors"><span class="dim">Colours you draw with show up here</span></div>
+      <h3 class="palHead">Palette</h3>
+      <div class="row">
+        <select id="palSel" aria-label="Palette"></select>
+        <button id="palAdd" class="mini" title="Add current colour to palette">+</button>
+        <button id="palMenu" class="mini" title="Import, download, colour ramps">⋯</button>
+      </div>
+      <div class="palette" id="palette"></div>
+      <h3>In this drawing</h3>
+      <div class="palette small" id="usedColors"></div>
+    </section>
+
+    <section class="card" id="layersCard">
+      <h2>Layers</h2>
+      <div class="layers" id="layers"></div>
+      <div class="row wrap layerBtns">
+        <button id="lAdd" title="New layer">+ Layer</button>
+        <button id="lDup" title="Duplicate layer">Duplicate</button>
+        <button id="lUp" title="Move up" aria-label="Move layer up">▲</button>
+        <button id="lDown" title="Move down" aria-label="Move layer down">▼</button>
+        <button id="lMerge" title="Merge down">Merge ↓</button>
+        <button id="lDel" title="Delete layer">Delete</button>
+      </div>
+      <div class="row wrap layerBtns">
+        <label class="opt" title="How this layer mixes with the layers under it">Blend <select id="lBlend"></select></label>
+        <button id="lGroup" title="Put this layer in a group (or a new one)">Group…</button>
+        <button id="lUngroup" title="Take this layer out of its group" disabled>Ungroup</button>
+        <button id="lTilemap" class="art-only" title="Turn this layer into a tilemap: a grid of reusable tiles">Tilemap…</button>
+      </div>
+      <div id="tilesetBox" class="tileset" hidden>
+        <div class="row"><b>Tileset</b><span class="dim" id="tsInfo"></span><span class="spacer"></span>
+          <button id="tsStamp" class="tog mini" title="Click cells to place the picked tile (right click clears)">Place tiles</button></div>
+        <div class="tsGrid" id="tsGrid"></div>
+      </div>
+      <div class="row wrap">
+        <button id="dRecolor" title="Swap colours across the whole drawing">Recolor…</button>
+        <button id="dOutline" title="Add a one-pixel outline around what's on this layer">Outline…</button>
+        <button id="dRef" title="Put a photo or sketch behind the canvas to trace">Reference…</button>
+        <button id="dAdjust" title="Brightness, contrast, curves, replace colour, invert, greyscale, posterize">Adjust…</button>
+        <button id="dColourMode" class="art-only" title="RGB or indexed (palette) colour">Colour mode…</button>
+      </div>
+      <div class="row wrap art-only">
+        <button id="dResizeLayer" title="Select everything on this layer with scale and rotate handles">Resize layer…</button>
+        <button id="dResize">Canvas size…</button>
+        <button id="dFlipH">Flip layer ↔</button>
+        <button id="dFlipV">Flip layer ↕</button>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
+<input type="file" id="fileIn" accept="image/png,image/gif,image/jpeg,image/webp,.json,.aseprite,.ase" hidden>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
