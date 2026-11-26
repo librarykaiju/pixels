@@ -81,6 +81,31 @@ export function mirrorTexel(model, x, y) {
   return [rx + (rw - 1 - lx), y];
 }
 
+// Copy one limb's texture onto the other (both layers). mirror: flipped like a reflection, so a watch on the
+// outside of the right wrist lands on the outside of the left wrist; otherwise a straight copy.
+// px is a 64x64 RGBA layer; changes it in place and returns how many texels changed.
+export function copyLimb(model, px, fromId, toId, mirror = true) {
+  const parts = partsFor(model), A = parts.find((p) => p.id === fromId), B = parts.find((p) => p.id === toId);
+  if (!A || !B) return 0;
+  const src = px.slice();
+  let changed = 0;
+  for (const layer of ["base", "over"]) {
+    const [w, h, d] = B.size;
+    const ra = faceRects(A[layer][0], A[layer][1], ...A.size), rb = faceRects(B[layer][0], B[layer][1], w, h, d);
+    for (const face of Object.keys(rb)) {
+      const from = mirror && (face === "left" || face === "right") ? (face === "left" ? "right" : "left") : face;
+      const [ax, ay, aw, ah] = ra[from], [bx, by, bw, bh] = rb[face];
+      for (let j = 0; j < bh; j++) for (let i = 0; i < bw; i++) {
+        const si = Math.min(aw - 1, mirror ? aw - 1 - i : i), sj = Math.min(ah - 1, j);
+        const s = ((ay + sj) * 64 + ax + si) * 4, t = ((by + j) * 64 + bx + i) * 4;
+        if (px[t] !== src[s] || px[t + 1] !== src[s + 1] || px[t + 2] !== src[s + 2] || px[t + 3] !== src[s + 3]) changed++;
+        px[t] = src[s]; px[t + 1] = src[s + 1]; px[t + 2] = src[s + 2]; px[t + 3] = src[s + 3];
+      }
+    }
+  }
+  return changed;
+}
+
 // Base-layer faces with transparent pixels. Java draws those as black or see-through
 // depending on version; Bedrock may reject the skin. Returns list of part labels.
 export function transparentBaseParts(rgba, model) {

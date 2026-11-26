@@ -361,3 +361,8 @@ body.touch .floatbar button { min-height: 38px; }
 .fb.fmode .fmCaret { font-size: 10px; color: var(--dim); }
 .fpop.fp-mode { width: 220px; gap: 2px; padding: 6px; }
 @media (max-width: 700px) { .fb.fmode .fmLbl { display: none; } .fb.fmode { padding: 0 6px; gap: 2px; } }
+
+.pvPaint button { font-size: 12.5px; padding: 4px 9px; }
+.wrapBtns { flex-wrap: wrap; }
+.pv-tools .seg.pvPaint { width: auto; flex: none; }
+.pvPaint button { white-space: nowrap; }

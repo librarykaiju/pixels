@@ -1,7 +1,7 @@
 import { readAse, writeAse } from "./aseprite.js";
 import { buildTilemap, renderTilemap, syncTilemap, placeTile, pruneTiles } from "./tilemap.js";
 import { Doc, BLEND_MODES, newLayer, blendOver, line, rectPoints, ellipsePoints, hexToRgba, rgbaToHex, shadeColor, sameColor } from "./doc.js";
-import { allFaces, faceAt, mirrorTexel, transparentBaseParts, fillTransparentBase, upgradeLegacy, guessModel, mannequin, PARTS } from "./skin.js";
+import { copyLimb, allFaces, faceAt, mirrorTexel, transparentBaseParts, fillTransparentBase, upgradeLegacy, guessModel, mannequin, PARTS } from "./skin.js";
 import { SkinPreview } from "./preview3d.js";
 import * as store from "./storage.js";
 import { iconSVG } from "./icons.js";
@@ -484,22 +484,37 @@ function plot(x, y, color) {
   }
 }
 // Pixel-perfect strokes: when a freehand line makes an L-shaped corner, drop the corner pixel.
+// Pixel perfect: drop the corner pixel of a one-step stair (the "double" pixel freehand lines leave).
+// A deliberate L (two or more pixels straight in, then two or more straight out) keeps its corner: when the
+// run into a corner is long, the decision waits for the next pixel to see whether the new direction continues.
 function perfectPush(x, y) {
   const p = drag.path, last = p[p.length - 1];
   if (last && last[0] === x && last[1] === y) return;
   stamp(x, y, drag.color);
   p.push([x, y]);
-  if (p.length < 3) return;
-  const [a, b, c] = p.slice(-3);
-  if (Math.abs(a[0] - c[0]) === 1 && Math.abs(a[1] - c[1]) === 1 && (b[0] === a[0] || b[1] === a[1]) && (b[0] === c[0] || b[1] === c[1])) {
-    const [bx, by] = wrapXY(b[0], b[1]);
-    for (const [mx, my] of mirrored(bx, by)) {
-      if (!doc.inBounds(mx, my)) continue;
-      const k = (my * doc.w + mx) * 4;
-      doc.layer.px.set(drag.base.subarray(k, k + 4), k);
-    }
-    p.splice(p.length - 2, 1);
+  const step = (a, b) => [b[0] - a[0], b[1] - a[1]];
+  const same = (u, v) => u[0] === v[0] && u[1] === v[1];
+  if (drag.pend != null) {
+    const i = drag.pend; drag.pend = null;
+    if (p.length >= i + 3 && !same(step(p[i], p[i + 1]), step(p[i + 1], p[i + 2]))) dropCorner(i); // the turn didn't last: a stair
   }
+  if (p.length < 3) return;
+  const n = p.length, [a, b, c] = p.slice(-3);
+  if (!(Math.abs(a[0] - c[0]) === 1 && Math.abs(a[1] - c[1]) === 1 && (b[0] === a[0] || b[1] === a[1]) && (b[0] === c[0] || b[1] === c[1]))) return;
+  const inStep = step(a, b);
+  let run = 1;
+  for (let k = n - 3; k > 0 && same(step(p[k - 1], p[k]), inStep); k--) run++;
+  if (run >= 2) drag.pend = n - 2; // maybe an L: wait for one more pixel
+  else dropCorner(n - 2);
+}
+function dropCorner(i) {
+  const p = drag.path, [bx, by] = wrapXY(p[i][0], p[i][1]);
+  for (const [mx, my] of mirrored(bx, by)) {
+    if (!doc.inBounds(mx, my)) continue;
+    const k = (my * doc.w + mx) * 4;
+    doc.layer.px.set(drag.base.subarray(k, k + 4), k);
+  }
+  p.splice(i, 1);
 }
 let inkDir = 1, brushOwn = true;
 function stamp(x, y, color) {
@@ -815,6 +830,24 @@ function transformPx(src, w, h, nw, nh, deg) {
   }
   return { px: out, w: rw, h: rh };
 }
+// Skins: copy one arm or leg onto the other.
+async function copyLimbDialog() {
+  if (doc.mode !== "skin") return;
+  const pairs = [["rarm", "larm", "Right arm → left arm"], ["larm", "rarm", "Left arm → right arm"], ["rleg", "lleg", "Right leg → left leg"], ["lleg", "rleg", "Left leg → right leg"]];
+  const r = await dialog(`<h2>Copy an arm or leg</h2>
+    <p class="dim">Copies the skin and the outer layer of one limb onto the other. "Right" is the character's right, the arm on your left when they face you.</p>
+    <label class="opt"><input type="checkbox" id="clMirror" checked> Mirror it (so it looks like a reflection, the usual choice)</label>
+    <div class="btns wrapBtns">${pairs.map(([a, b, l]) => `<button value="${a}:${b}">${l}</button>`).join("")}<button value="cancel" formnovalidate>Cancel</button></div>`,
+  () => ({ mirror: $("#clMirror").checked }));
+  if (!r || !r.value || r.value === "cancel") return;
+  const [from, to] = r.value.split(":");
+  doc.begin();
+  const n = copyLimb(doc.model, doc.layer.px, from, to, r.data.mirror);
+  if (!n) { doc.cancelIfUnchanged(); toast("They already match."); return; }
+  doc.emit();
+  toast(`Copied. Undo puts it back.`);
+}
+
 // Resize layer: select what's on the layer and open Scale / rotate on it.
 function resizeLayer() {
   if (doc.layer.tilemap) { toast("Tilemap layers resize by their tiles. Use Canvas size instead."); return; }
@@ -1119,10 +1152,18 @@ view.addEventListener("pointermove", (e) => {
   }
 });
 
+// After picking a colour with the dropper tool, go back to drawing (the tool used before, or the pencil).
+const BACK_FROM_PICK = new Set(["pencil", "fill", "line", "rect", "ellipse", "spray", "gradient", "contour", "shade"]);
+function afterPick() {
+  if (S.tool !== "picker") return;
+  const t = BACK_FROM_PICK.has(S.toolBeforePick) ? S.toolBeforePick : "pencil";
+  setTool(in3D() && !PAINT_ON_3D.has(t) ? "pencil" : t);
+}
 function endPointer(e) {
   pointers.delete(e.pointerId);
   if (!pointers.size) document.body.classList.remove("drawing");
   if (!drag) return;
+  if (drag.kind === "picker") afterPick();
   if (drag.kind === "pinch") {
     if (pointers.size === 0) {
       // two-finger tap = undo, like most drawing apps on iPad
@@ -1282,6 +1323,7 @@ function setupPreview() {
       return;
     }
     if (pdrag && pdrag.kind === "paint") { doc.cancelIfUnchanged(); doc.emit(); }
+    if (pdrag && pdrag.kind === "pick") afterPick();
     pdrag = null; cv.style.cursor = "grab";
   };
   cv.addEventListener("pointerup", end);
@@ -1326,7 +1368,7 @@ function setOuter(on) {
   S.showOuter = on;
   setToggle($("#pvOuter"), on);
   const b = $('#pvTools [data-pv="outer"]'); if (b) setToggle(b, on);
-  if (!on && $("#pvTarget").value === "over") { $("#pvTarget").value = "base"; if (preview) preview.pickTarget = "base"; }
+  if (!on && $("#pvTarget").value === "over") { $("#pvTarget").value = "base"; if (preview) preview.pickTarget = "base"; syncPaintTarget(); }
   if (preview) { preview.showOverlay = on; preview.requestDraw(); }
   requestRender();
 }
@@ -1348,12 +1390,14 @@ function setTool(id) {
     return;
   }
   if (SELECT_TOOLS.has(S.tool) && !SELECT_TOOLS.has(id)) { commitFloat(); requestRender(); } // keep the selection: painting stays inside it
+  if (id === "picker" && S.tool !== "picker") S.toolBeforePick = S.tool;
   S.tool = id;
   $$("#toolList button").forEach((b) => b.classList.toggle("on", b.dataset.tool === id));
   if (doc) syncFocusBar();
   view.style.cursor = id === "move" ? "move" : SELECT_TOOLS.has(id) || id === "slice" ? "crosshair" : "default";
   requestRender();
 }
+function syncPaintTarget() { const v = $("#pvTarget").value; $$("#pvTools [data-pvt]").forEach((b) => b.classList.toggle("on", b.dataset.pvt === v)); }
 function setToggle(btn, on) { btn.classList.toggle("on", on); btn.setAttribute("aria-pressed", on); }
 
 // ---------------------------------------------------------------- UI: colours
@@ -3208,7 +3252,7 @@ const FOCUS_ITEMS = {
   file: [["New drawing", "#bNew"], ["My drawings", "#bOpen"], ["Save", "#bSave"], ["Import a PNG or .aseprite", "#bImport"], ["Export / download", "#bExport"], ["Free asset packs", "#bAssets"], ["Character starter", "#bChar2"], ["Shortcuts and help", "#bHelp"]],
   edit: [["Copy selection", () => S.sel && selAction("copy"), () => !!S.sel], ["Paste", () => S.clip && pasteClip(S.clip), () => !!S.clip], ["Select all", "selectAll"],
     "-", ["Adjust colours…", "#dAdjust"], ["Recolour…", "#dRecolor"], ["Outline…", "#dOutline"], ["Colour mode…", "#dColourMode"],
-    "-", ["Resize layer…", "#dResizeLayer"], ["Canvas size…", "#dResize"], ["Flip layer ↔", "#dFlipH"], ["Flip layer ↕", "#dFlipV"], ["Reference image…", "#dRef"]],
+    "-", ["Copy arm or leg…", "#bCopyLimb"], ["Resize layer…", "#dResizeLayer"], ["Canvas size…", "#dResize"], ["Flip layer ↔", "#dFlipH"], ["Flip layer ↕", "#dFlipV"], ["Reference image…", "#dRef"]],
   view: [["Grid", "#optGrid"], ["Mirror ↔", "#optMirrorX"], ["Mirror ↕", "#optMirrorY"], ["Tile mode", "#optTile"], ["Onion skin", "#aOnion"], ["Part outlines", "#optGuides"], "-", ["Fit to screen", "#zFit"]],
 };
 FOCUS_ITEMS.mode = () => [
@@ -3352,6 +3396,7 @@ function wire() {
   $("#optSize").addEventListener("change", () => { if (S.brush) { S.brush = null; syncBrushChip(); } setTimeout(syncFocusBar, 0); });
   $("#dAdjust").addEventListener("click", adjustDialog);
   $("#dResizeLayer").addEventListener("click", resizeLayer);
+  $("#bCopyLimb").addEventListener("click", copyLimbDialog);
   $("#dColourMode").addEventListener("click", colourModeDialog);
   $("#dOutline").addEventListener("click", outlineDialog);
   $("#dRef").addEventListener("click", referenceDialog);
@@ -3420,7 +3465,11 @@ function wire() {
   }));
   $("#pvOuter").addEventListener("click", () => setOuter(!S.showOuter));
   $("#pvWalk").addEventListener("click", (e) => { S.walk = !S.walk; setToggle(e.currentTarget, S.walk); if (preview) preview.setWalk(S.walk); });
-  $("#pvTarget").addEventListener("change", (e) => { if (e.target.value === "over" && !S.showOuter) setOuter(true); if (preview) preview.pickTarget = e.target.value; });
+  $("#pvTarget").addEventListener("change", (e) => { if (e.target.value === "over" && !S.showOuter) setOuter(true); if (preview) preview.pickTarget = e.target.value; syncPaintTarget(); });
+  $$("#pvTools [data-pvt]").forEach((b) => b.addEventListener("click", () => {
+    const t = $("#pvTarget"); t.value = b.dataset.pvt; t.dispatchEvent(new Event("change"));
+    toast(b.dataset.pvt === "over" ? "Painting the outer layer. The eraser clears it back to see-through." : "Painting the skin.");
+  }));
   buildIsoChips();
   wireAnimation();
   $("#dRecolor").addEventListener("click", recolorDialog);

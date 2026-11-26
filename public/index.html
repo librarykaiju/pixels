@@ -126,7 +126,11 @@
         <div class="pv-tools" id="pvTools">
           <button data-pv="undo" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="hico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h14v11"/></svg></button>
           <button data-pv="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg class="hico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H6v11"/></svg></button>
-          <button data-pv="outer" class="tog on" title="Show and paint the outer layer (hat, jacket, sleeves, pants)">Outer layer</button>
+          <div class="seg pvPaint" role="group" aria-label="Paint on">
+            <button data-pvt="base" class="on" title="Paint the skin itself">Paint skin</button>
+            <button data-pvt="over" title="Paint the outer layer: hat, jacket, sleeves, pants. Empty spots can be painted too.">Paint outer</button>
+          </div>
+          <button data-pv="outer" class="tog on" title="Show the outer layer (hat, jacket, sleeves, pants)">Show outer</button>
           <span class="sep"></span>
           <div class="isoChips" data-iso-group></div>
         </div>
@@ -147,6 +151,7 @@
           <select id="pvTarget"><option value="base">Skin</option><option value="over">Outer layer</option></select>
         </label>
       </div>
+      <button id="bCopyLimb" class="skin-only" title="Copy one arm or leg onto the other, mirrored">Copy arm or leg…</button>
       <div class="opt">Paint one part only</div>
       <div class="isoChips parts" data-iso-group title="Show and paint only this part. Everything else is locked."></div>
       <div class="check" id="skinCheck"></div>
